@@ -4,7 +4,6 @@ import {
 } from 'lucide-react';
 import { v4 as uuid } from 'uuid';
 import { useConnectionStore } from '@/stores/connectionStore';
-import { mqttManager } from '@/services/mqtt/MqttClientManager';
 import { QoS } from '@/services/mqtt/MqttTypes';
 
 // ===== Subscription Tipi =====
@@ -38,7 +37,10 @@ export const SubscribePanel: React.FC = () => {
     if (!activeProfileId || !isConnected || !newTopic.trim()) return;
 
     try {
-      await mqttManager.subscribe(activeProfileId, newTopic.trim(), newQos);
+      const api = (window as any).electronAPI;
+      if (!api) throw new Error('electronAPI not available');
+      const result = await api.mqttSubscribe(activeProfileId, newTopic.trim(), newQos);
+      if (!result.success) throw new Error(result.error || 'Subscribe failed');
 
       const sub: Subscription = {
         id: uuid(),
@@ -62,7 +64,10 @@ export const SubscribePanel: React.FC = () => {
     if (!activeProfileId) return;
 
     try {
-      await mqttManager.unsubscribe(activeProfileId, sub.topic);
+      const api = (window as any).electronAPI;
+      if (!api) throw new Error('electronAPI not available');
+      const result = await api.mqttUnsubscribe(activeProfileId, sub.topic);
+      if (!result.success) throw new Error(result.error || 'Unsubscribe failed');
       setSubscriptions((prev) => prev.filter((s) => s.id !== sub.id));
     } catch (err: any) {
       console.error('Unsubscribe failed:', err.message);
@@ -73,10 +78,15 @@ export const SubscribePanel: React.FC = () => {
   const toggleActive = async (sub: Subscription) => {
     if (!activeProfileId) return;
 
+    const api = (window as any).electronAPI;
+    if (!api) throw new Error('electronAPI not available');
+
     if (sub.isActive) {
-      await mqttManager.unsubscribe(activeProfileId, sub.topic);
+      const result = await api.mqttUnsubscribe(activeProfileId, sub.topic);
+      if (!result.success) throw new Error(result.error || 'Unsubscribe failed');
     } else {
-      await mqttManager.subscribe(activeProfileId, sub.topic, sub.qos);
+      const result = await api.mqttSubscribe(activeProfileId, sub.topic, sub.qos);
+      if (!result.success) throw new Error(result.error || 'Subscribe failed');
     }
 
     setSubscriptions((prev) =>
