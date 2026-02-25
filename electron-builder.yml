@@ -1,0 +1,29 @@
+appId: com.huseyin.mqtt-explorer
+productName: MQTT Explorer
+copyright: Copyright © 2026 Huseyin2603
+
+directories:
+  output: release
+  buildResources: build
+
+files:
+  - dist/**/*
+  - node_modules/**/*
+  - package.json
+
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  icon: build/icon.ico
+  artifactName: "${productName}-Setup-${version}.${ext}"
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  deleteAppDataOnUninstall: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: MQTT Explorer
