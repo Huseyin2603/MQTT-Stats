@@ -6,7 +6,6 @@ import Editor from '@monaco-editor/react';
 import { v4 as uuid } from 'uuid';
 import { useConnectionStore } from '@/stores/connectionStore';
 import { useMessageStore } from '@/stores/messageStore';
-import { mqttManager } from '@/services/mqtt/MqttClientManager';
 import { QoS, PayloadFormat, MqttMessage } from '@/services/mqtt/MqttTypes';
 
 // ===== Format Tanımları =====
@@ -120,13 +119,10 @@ export const PublishPanel: React.FC = () => {
       }
 
       // MQTT ile gönder
-      await mqttManager.publish(
-        activeProfileId,
-        topic.trim(),
-        finalPayload,
-        qos,
-        retain
-      );
+      const api = (window as any).electronAPI;
+      if (!api) throw new Error('electronAPI not available');
+      const result = await api.mqttPublish(activeProfileId, topic.trim(), finalPayload, qos, retain);
+      if (!result.success) throw new Error(result.error || 'Publish failed');
 
       // Giden mesajı store'a ekle
       const outMsg: MqttMessage = {
