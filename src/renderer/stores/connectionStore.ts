@@ -8,6 +8,7 @@ interface ConnectionStore {
   profiles: ConnectionProfile[];
   states: Record<string, ConnectionState>;
   activeProfileId: string | null;
+  logs: Record<string, Array<{ time: number; level: string; text: string }>>;
 
   addProfile: (profile?: Partial<ConnectionProfile>) => string;
   removeProfile: (id: string) => void;
@@ -16,6 +17,8 @@ interface ConnectionStore {
   connect: (profileId: string) => Promise<void>;
   disconnect: (profileId: string) => Promise<void>;
   setState: (profileId: string, state: ConnectionState) => void;
+  addLog: (profileId: string, level: string, text: string) => void;
+  clearLogs: (profileId: string) => void;
 }
 
 const defaultProfile = (): ConnectionProfile => ({
@@ -54,6 +57,7 @@ export const useConnectionStore = create<ConnectionStore>((set, get) => ({
   profiles: [],
   states: {},
   activeProfileId: null,
+  logs: {},
 
   addProfile: (partial) => {
     const profile = { ...defaultProfile(), ...partial };
@@ -101,6 +105,7 @@ export const useConnectionStore = create<ConnectionStore>((set, get) => ({
     set((state) => ({
       states: { ...state.states, [profileId]: 'connecting' },
     }));
+    get().addLog(profileId, 'info', `Connecting to ${profile.host}:${profile.port}...`);
 
     try {
       const api = (window as any).electronAPI;
@@ -122,18 +127,21 @@ export const useConnectionStore = create<ConnectionStore>((set, get) => ({
 
         if (!result.success) {
           console.error('[MQTT] Connect failed:', result.error);
+          get().addLog(profileId, 'error', `Connect failed: ${result.error}`);
           set((state) => ({
             states: { ...state.states, [profileId]: 'error' },
           }));
         }
       } else {
         console.error('[MQTT] electronAPI not available');
+        get().addLog(profileId, 'error', 'Connect failed: electronAPI not available');
         set((state) => ({
           states: { ...state.states, [profileId]: 'error' },
         }));
       }
     } catch (err: any) {
       console.error('[MQTT] Connect error:', err);
+      get().addLog(profileId, 'error', `Connect failed: ${err?.message || err}`);
       set((state) => ({
         states: { ...state.states, [profileId]: 'error' },
       }));
@@ -149,6 +157,7 @@ export const useConnectionStore = create<ConnectionStore>((set, get) => ({
     } catch (err) {
       console.error('[MQTT] Disconnect error:', err);
     }
+    get().addLog(profileId, 'info', 'Disconnected');
     set((state) => ({
       states: { ...state.states, [profileId]: 'disconnected' },
     }));
@@ -157,6 +166,24 @@ export const useConnectionStore = create<ConnectionStore>((set, get) => ({
   setState: (profileId: string, newState: ConnectionState) => {
     set((state) => ({
       states: { ...state.states, [profileId]: newState },
+    }));
+  },
+
+  addLog: (profileId: string, level: string, text: string) => {
+    set((state) => {
+      const existing = state.logs[profileId] || [];
+      return {
+        logs: {
+          ...state.logs,
+          [profileId]: [...existing, { time: Date.now(), level, text }],
+        },
+      };
+    });
+  },
+
+  clearLogs: (profileId: string) => {
+    set((state) => ({
+      logs: { ...state.logs, [profileId]: [] },
     }));
   },
 }));

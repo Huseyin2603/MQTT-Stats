@@ -24,21 +24,21 @@ export const TitleBar: React.FC = () => {
         style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
       >
         <button
-          onClick={() => window.electronAPI.minimizeWindow()}
+          onClick={() => window.electronAPI.windowMinimize()}
           className="w-11.5 h-9.5 flex items-center justify-center
                      hover:bg-bg-hover transition-colors"
         >
           <Minus size={14} className="text-text-secondary" />
         </button>
         <button
-          onClick={() => window.electronAPI.maximizeWindow()}
+          onClick={() => window.electronAPI.windowMaximize()}
           className="w-11.5 h-9.5 flex items-center justify-center
                      hover:bg-bg-hover transition-colors"
         >
           <Square size={12} className="text-text-secondary" />
         </button>
         <button
-          onClick={() => window.electronAPI.closeWindow()}
+          onClick={() => window.electronAPI.windowClose()}
           className="w-11.5 h-9.5 flex items-center justify-center
                      hover:bg-red/20 transition-colors group"
         >
