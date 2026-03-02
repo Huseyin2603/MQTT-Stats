@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { persist } from 'zustand/middleware';
 import { ConnectionProfile } from '@/services/mqtt/MqttTypes';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -53,7 +54,9 @@ const defaultProfile = (): ConnectionProfile => ({
   updatedAt: new Date().toISOString(),
 });
 
-export const useConnectionStore = create<ConnectionStore>((set, get) => ({
+export const useConnectionStore = create<ConnectionStore>()(
+  persist(
+    (set, get) => ({
   profiles: [],
   states: {},
   activeProfileId: null,
@@ -186,4 +189,14 @@ export const useConnectionStore = create<ConnectionStore>((set, get) => ({
       logs: { ...state.logs, [profileId]: [] },
     }));
   },
-}));
+    }),
+    {
+      name: 'mqtt-connections',
+      // Only persist profiles; states, logs, and activeProfileId are runtime-only
+      partialize: (state) => ({ profiles: state.profiles }),
+      onRehydrateStorage: () => (state, error) => {
+        if (error) console.error('[Store] Failed to rehydrate profiles from localStorage:', error);
+      },
+    }
+  )
+);
