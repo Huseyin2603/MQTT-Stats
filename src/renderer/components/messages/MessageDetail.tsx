@@ -40,7 +40,7 @@ export const MessageDetail: React.FC = () => {
   const editorLang = useMemo(() => {
     const fmt = viewFormat === 'auto' ? message.payloadFormat : viewFormat;
     const map: Record<string, string> = {
-      json: 'json', xml: 'xml', raw: 'plaintext', hex: 'plaintext', base64: 'plaintext',
+      json: 'json', xml: 'xml', raw: 'plaintext', hex: 'plaintext', base64: 'plaintext', protobuf: 'json',
     };
     return map[fmt] || 'plaintext';
   }, [message, viewFormat]);
@@ -92,13 +92,28 @@ export const MessageDetail: React.FC = () => {
               Retained
             </span>
           )}
-          <span className="text-[10px] px-1.5 py-0.5 rounded bg-bg-tertiary text-text-muted">
-            {message.payloadFormat.toUpperCase()}
-          </span>
+          {message.payloadFormat === 'protobuf' ? (
+            <span className="text-[10px] px-1.5 py-0.5 rounded font-bold"
+              style={{ backgroundColor: 'rgba(163,113,247,0.2)', color: '#a371f7' }}>
+              PROTO
+            </span>
+          ) : (
+            <span className="text-[10px] px-1.5 py-0.5 rounded bg-bg-tertiary text-text-muted">
+              {message.payloadFormat.toUpperCase()}
+            </span>
+          )}
           <span className="text-[10px] px-1.5 py-0.5 rounded bg-bg-tertiary text-text-muted">
             {message.payloadBytes} bytes
           </span>
         </div>
+        {message.payloadFormat === 'protobuf' && message.protoMessageType && (
+          <div className="flex items-center gap-2 mt-1">
+            <span className="text-[10px] text-text-muted">Message type:</span>
+            <span className="text-[10px] font-mono" style={{ color: '#a371f7' }}>
+              {message.protoMessageType}
+            </span>
+          </div>
+        )}
       </div>
 
       <div className="flex items-center gap-2 px-3 py-1.5 border-b border-border">

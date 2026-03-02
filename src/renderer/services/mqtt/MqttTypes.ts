@@ -3,7 +3,7 @@ export type MqttProtocolVersion = '3.1' | '3.1.1' | '5.0';
 export type QoS = 0 | 1 | 2;
 export type ConnectionState = 'disconnected' | 'connecting' | 'connected' | 'reconnecting' | 'error';
 export type TransportProtocol = 'tcp' | 'tls' | 'ws' | 'wss';
-export type PayloadFormat = 'raw' | 'json' | 'xml' | 'hex' | 'base64';
+export type PayloadFormat = 'raw' | 'json' | 'xml' | 'hex' | 'base64' | 'protobuf';
 
 // ===== Bağlantı Profili =====
 export interface ConnectionProfile {
@@ -63,6 +63,8 @@ export interface MqttMessage {
   duplicate: boolean;
   timestamp: number;
   direction: 'inbound' | 'outbound';
+  decodedPayload?: any;
+  protoMessageType?: string;
 }
 
 // ===== Topic Ağaç Düğümü =====

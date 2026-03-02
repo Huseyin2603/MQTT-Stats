@@ -34,6 +34,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
   openFileDialog: (options: any) =>
     ipcRenderer.invoke('dialog:openFile', options),
 
+  // Protobuf
+  protobufLoadSchema: (filePath: string) =>
+    ipcRenderer.invoke('protobuf:loadSchema', filePath),
+  protobufRemoveSchema: (schemaId: string) =>
+    ipcRenderer.invoke('protobuf:removeSchema', schemaId),
+  protobufDecode: (schemaId: string, messageType: string, base64Payload: string) =>
+    ipcRenderer.invoke('protobuf:decode', schemaId, messageType, base64Payload),
+
   // Pencere kontrolü
   windowMinimize: () => ipcRenderer.invoke('window:minimize'),
   windowMaximize: () => ipcRenderer.invoke('window:maximize'),

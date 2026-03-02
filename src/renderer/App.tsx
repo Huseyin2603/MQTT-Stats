@@ -3,6 +3,7 @@ import { Toaster } from 'react-hot-toast';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { useConnectionStore } from '@/stores/connectionStore';
 import { useMessageStore } from '@/stores/messageStore';
+import { useProtobufStore } from '@/stores/protobufStore';
 
 export const App: React.FC = () => {
   useEffect(() => {
@@ -14,20 +15,41 @@ export const App: React.FC = () => {
       useConnectionStore.getState().addLog(data.profileId, 'info', `Status: ${data.status}`);
     });
 
-    api.onMqttMessage((data: any) => {
-      useMessageStore.getState().addMessage({
-        id: crypto.randomUUID(),
-        connectionId: data.profileId,
-        topic: data.topic,
-        payload: data.payload,
-        payloadBytes: new TextEncoder().encode(data.payload).length,
-        payloadFormat: 'raw',
-        qos: data.qos,
-        retain: data.retain,
-        duplicate: false,
-        timestamp: data.timestamp,
-        direction: 'inbound',
-      });
+    api.onMqttMessage(async (data: any) => {
+      try {
+        const msg: any = {
+          id: crypto.randomUUID(),
+          connectionId: data.profileId,
+          topic: data.topic,
+          payload: data.payload,
+          payloadBytes: new TextEncoder().encode(data.payload).length,
+          payloadFormat: 'raw' as const,
+          qos: data.qos,
+          retain: data.retain,
+          duplicate: false,
+          timestamp: data.timestamp,
+          direction: 'inbound' as const,
+        };
+
+        // Try protobuf decoding if a mapping exists
+        if (data.payloadBase64) {
+          try {
+            const result = await useProtobufStore.getState().decodePayload(data.topic, data.payloadBase64);
+            if (result) {
+              msg.payloadFormat = 'protobuf';
+              msg.payload = JSON.stringify(result.decoded, null, 2);
+              msg.decodedPayload = result.decoded;
+              msg.protoMessageType = result.messageType;
+            }
+          } catch (err: any) {
+            console.error(`[Protobuf] Message decode error:`, err.message);
+          }
+        }
+
+        useMessageStore.getState().addMessage(msg);
+      } catch (err: any) {
+        console.error(`[MQTT] onMqttMessage handler error:`, err.message);
+      }
     });
 
     api.onMqttError((data: { profileId: string; error: string }) => {

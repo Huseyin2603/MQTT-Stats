@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import {
-  Plug, Send, BarChart3, ScrollText,
+  Plug, Send, BarChart3, ScrollText, FileCode2,
 } from 'lucide-react';
 import { TitleBar } from './TitleBar';
 import { Sidebar } from './Sidebar';
@@ -13,9 +13,10 @@ import { MessageList } from '@/components/messages/MessageList';
 import { MessageDetail } from '@/components/messages/MessageDetail';
 import { StatsPanel } from '@/components/analytics/StatsPanel';
 import { LogPanel } from '@/components/connection/LogPanel';
+import { ProtobufPanel } from '@/components/protobuf/ProtobufPanel';
 import { useConnectionStore } from '@/stores/connectionStore';
 
-type Tab = 'connection' | 'publish' | 'stats' | 'log';
+type Tab = 'connection' | 'publish' | 'stats' | 'log' | 'protobuf';
 
 export const MainLayout: React.FC = () => {
   const { activeProfileId } = useConnectionStore();
@@ -64,6 +65,7 @@ export const MainLayout: React.FC = () => {
               <TabButton active={tab === 'publish'} onClick={() => setTab('publish')} icon={<Send size={14} />} label="Publish" />
               <TabButton active={tab === 'stats'} onClick={() => setTab('stats')} icon={<BarChart3 size={14} />} label="Stats" />
               <TabButton active={tab === 'log'} onClick={() => setTab('log')} icon={<ScrollText size={14} />} label="Log" />
+              <TabButton active={tab === 'protobuf'} onClick={() => setTab('protobuf')} icon={<FileCode2 size={14} />} label="Protobuf" />
 
               {/* Sağ taraf: Messages / Detail toggle */}
               <div style={{ marginLeft: 'auto', display: 'flex', paddingRight: 8 }}>
@@ -108,6 +110,7 @@ export const MainLayout: React.FC = () => {
                 {tab === 'publish' && <PublishPanel />}
                 {tab === 'stats' && <StatsPanel />}
                 {tab === 'log' && <LogPanel />}
+                {tab === 'protobuf' && <ProtobufPanel />}
               </div>
 
             </div>
