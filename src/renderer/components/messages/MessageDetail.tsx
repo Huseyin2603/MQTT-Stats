@@ -1,49 +1,84 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Copy, Check, ArrowDown, ArrowUp, Clock, Hash,
+  Copy, Check, ArrowDown, ArrowUp, Hash, Trash2,
 } from 'lucide-react';
 import Editor from '@monaco-editor/react';
+import { Virtuoso, VirtuosoHandle } from 'react-virtuoso';
 import { useMessageStore } from '@/stores/messageStore';
+import { MqttMessage } from '@/services/mqtt/MqttTypes';
+
+function formatTime(ts: number): string {
+  const d = new Date(ts);
+  const hh = d.getHours().toString().padStart(2, '0');
+  const mm = d.getMinutes().toString().padStart(2, '0');
+  const ss = d.getSeconds().toString().padStart(2, '0');
+  const ms = d.getMilliseconds().toString().padStart(3, '0');
+  return `${hh}:${mm}:${ss}.${ms}`;
+}
 
 export const MessageDetail: React.FC = () => {
-  const { messages, selectedMessageId } = useMessageStore();
+  const {
+    selectedTopic,
+    topicHistory,
+    historySelectedId,
+    selectHistoryMessage,
+    clearTopicHistory,
+  } = useMessageStore();
+
   const [copied, setCopied] = useState(false);
   const [viewFormat, setViewFormat] = useState<'auto' | 'raw' | 'json' | 'xml' | 'hex'>('auto');
+  const virtuosoRef = useRef<VirtuosoHandle>(null);
 
-  const message = useMemo(
-    () => messages.find((m) => m.id === selectedMessageId),
-    [messages, selectedMessageId]
+  const history = useMemo(
+    () => (selectedTopic ? (topicHistory[selectedTopic] ?? []) : []),
+    [selectedTopic, topicHistory]
   );
 
-  if (!message) {
-    return (
-      <div className="flex items-center justify-center h-full text-text-muted text-xs">
-        ← Select a message to view details
-      </div>
-    );
-  }
+  const selectedMsg: MqttMessage | undefined = useMemo(
+    () => history.find((m) => m.id === historySelectedId),
+    [history, historySelectedId]
+  );
+
+  // Auto-select latest message when topic changes or new messages arrive
+  useEffect(() => {
+    if (history.length > 0) {
+      const latest = history[history.length - 1];
+      if (!historySelectedId || !history.find((m) => m.id === historySelectedId)) {
+        selectHistoryMessage(latest.id);
+      }
+    }
+  }, [selectedTopic, history.length, historySelectedId, selectHistoryMessage]);
+
+  // Auto-scroll to bottom when new messages arrive
+  useEffect(() => {
+    if (history.length > 0) {
+      virtuosoRef.current?.scrollToIndex({ index: history.length - 1, behavior: 'smooth' });
+    }
+  }, [history.length]);
 
   const formattedPayload = useMemo(() => {
-    const fmt = viewFormat === 'auto' ? message.payloadFormat : viewFormat;
+    if (!selectedMsg) return '';
+    const fmt = viewFormat === 'auto' ? selectedMsg.payloadFormat : viewFormat;
     if (fmt === 'json') {
-      try { return JSON.stringify(JSON.parse(message.payload), null, 2); }
-      catch { return message.payload; }
+      try { return JSON.stringify(JSON.parse(selectedMsg.payload), null, 2); }
+      catch { return selectedMsg.payload; }
     }
     if (fmt === 'hex') {
-      return Array.from(new TextEncoder().encode(message.payload))
+      return Array.from(new TextEncoder().encode(selectedMsg.payload))
         .map((b) => b.toString(16).padStart(2, '0').toUpperCase())
         .join(' ');
     }
-    return message.payload;
-  }, [message, viewFormat]);
+    return selectedMsg.payload;
+  }, [selectedMsg, viewFormat]);
 
   const editorLang = useMemo(() => {
-    const fmt = viewFormat === 'auto' ? message.payloadFormat : viewFormat;
+    if (!selectedMsg) return 'plaintext';
+    const fmt = viewFormat === 'auto' ? selectedMsg.payloadFormat : viewFormat;
     const map: Record<string, string> = {
       json: 'json', xml: 'xml', raw: 'plaintext', hex: 'plaintext', base64: 'plaintext', protobuf: 'json',
     };
     return map[fmt] || 'plaintext';
-  }, [message, viewFormat]);
+  }, [selectedMsg, viewFormat]);
 
   const handleCopy = async (text: string) => {
     await navigator.clipboard.writeText(text);
@@ -51,140 +86,228 @@ export const MessageDetail: React.FC = () => {
     setTimeout(() => setCopied(false), 1500);
   };
 
+  if (!selectedTopic) {
+    return (
+      <div style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        height: '100%', color: '#8b949e', fontSize: 12,
+      }}>
+        Select a topic from the tree to view message history
+      </div>
+    );
+  }
+
   return (
-    <div className="flex flex-col h-full">
-      <div className="px-3 py-2 border-b border-border">
-        <span className="text-xs font-semibold text-text-secondary uppercase tracking-wider">
-          Message Detail
-        </span>
-      </div>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
 
-      <div className="px-3 py-2 border-b border-border space-y-1.5">
-        <MetaRow
-          icon={message.direction === 'inbound'
-            ? <ArrowDown size={11} className="text-green" />
-            : <ArrowUp size={11} className="text-blue" />}
-          label="Direction"
-          value={message.direction === 'inbound' ? 'Received' : 'Sent'}
-        />
-        <MetaRow
-          icon={<Hash size={11} className="text-text-muted" />}
-          label="Topic"
-          value={message.topic}
-          mono
-          copyable
-          onCopy={() => handleCopy(message.topic)}
-        />
-        <MetaRow
-          icon={<Clock size={11} className="text-text-muted" />}
-          label="Time"
-          value={new Date(message.timestamp).toLocaleString()}
-        />
-        <div className="flex items-center gap-2 pt-1">
-          <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold
-            ${message.qos === 0 ? 'bg-blue/20 text-blue' : ''}
-            ${message.qos === 1 ? 'bg-yellow/20 text-yellow' : ''}
-            ${message.qos === 2 ? 'bg-orange/20 text-orange' : ''}`}>
-            QoS {message.qos}
-          </span>
-          {message.retain && (
-            <span className="text-[10px] px-1.5 py-0.5 rounded bg-purple/20 text-purple font-bold">
-              Retained
-            </span>
-          )}
-          {message.payloadFormat === 'protobuf' ? (
-            <span className="text-[10px] px-1.5 py-0.5 rounded font-bold"
-              style={{ backgroundColor: 'rgba(163,113,247,0.2)', color: '#a371f7' }}>
-              PROTO
-            </span>
-          ) : (
-            <span className="text-[10px] px-1.5 py-0.5 rounded bg-bg-tertiary text-text-muted">
-              {message.payloadFormat.toUpperCase()}
-            </span>
-          )}
-          <span className="text-[10px] px-1.5 py-0.5 rounded bg-bg-tertiary text-text-muted">
-            {message.payloadBytes} bytes
-          </span>
-        </div>
-        {message.payloadFormat === 'protobuf' && message.protoMessageType && (
-          <div className="flex items-center gap-2 mt-1">
-            <span className="text-[10px] text-text-muted">Message type:</span>
-            <span className="text-[10px] font-mono" style={{ color: '#a371f7' }}>
-              {message.protoMessageType}
-            </span>
-          </div>
-        )}
-      </div>
-
-      <div className="flex items-center gap-2 px-3 py-1.5 border-b border-border">
-        <span className="text-xs text-text-muted">View as:</span>
-        {['auto', 'raw', 'json', 'xml', 'hex'].map((fmt) => (
-          <button
-            key={fmt}
-            onClick={() => setViewFormat(fmt as any)}
-            className={`px-2 py-0.5 rounded text-[10px] font-medium transition-colors
-              ${viewFormat === fmt
-                ? 'bg-blue text-white'
-                : 'bg-bg-tertiary text-text-secondary hover:bg-bg-hover'}`}>
-            {fmt.toUpperCase()}
-          </button>
-        ))}
-        <div className="flex-1" />
+      {/* ── Header ── */}
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 8,
+        padding: '6px 12px', borderBottom: '1px solid #30363d',
+        flexShrink: 0, minHeight: 36,
+      }}>
+        <Hash size={12} style={{ color: '#8b949e', flexShrink: 0 }} />
+        <span style={{
+          fontSize: 12, fontWeight: 600, color: '#e6edf3',
+          fontFamily: 'monospace', flex: 1, overflow: 'hidden',
+          textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+        }}>{selectedTopic}</span>
+        <span style={{
+          fontSize: 10, color: '#8b949e', background: '#21262d',
+          padding: '1px 6px', borderRadius: 4, flexShrink: 0,
+        }}>{history.length} msg{history.length !== 1 ? 's' : ''}</span>
         <button
-          onClick={() => handleCopy(formattedPayload)}
-          className="flex items-center gap-1 px-2 py-0.5 rounded text-xs
-                     text-text-muted hover:text-text-primary hover:bg-bg-hover transition-colors">
-          {copied ? <Check size={12} className="text-green" /> : <Copy size={12} />}
-          {copied ? 'Copied!' : 'Copy'}
+          onClick={() => clearTopicHistory(selectedTopic)}
+          title="Clear history"
+          style={{
+            display: 'flex', alignItems: 'center', gap: 4,
+            background: 'none', border: 'none', cursor: 'pointer',
+            color: '#8b949e', padding: '2px 6px', borderRadius: 4,
+            fontSize: 10,
+          }}
+          onMouseEnter={(e) => { e.currentTarget.style.color = '#e6edf3'; e.currentTarget.style.background = '#21262d'; }}
+          onMouseLeave={(e) => { e.currentTarget.style.color = '#8b949e'; e.currentTarget.style.background = 'none'; }}
+        >
+          <Trash2 size={11} />
         </button>
       </div>
 
-      <div className="flex-1 min-h-0">
-        <Editor
-          height="100%"
-          language={editorLang}
-          value={formattedPayload || '(empty payload)'}
-          theme="vs-dark"
-          options={{
-            readOnly: true,
-            minimap: { enabled: false },
-            fontSize: 13,
-            fontFamily: "'Cascadia Code', 'Consolas', monospace",
-            lineNumbers: editorLang !== 'plaintext' ? 'on' : 'off',
-            scrollBeyondLastLine: false,
-            wordWrap: 'on',
-            padding: { top: 8, bottom: 8 },
-            renderLineHighlight: 'none',
-            automaticLayout: true,
-          }}
-        />
+      {/* ── History List (40%) ── */}
+      <div style={{
+        height: '40%', flexShrink: 0,
+        borderBottom: '1px solid #30363d', overflow: 'hidden',
+      }}>
+        {history.length === 0 ? (
+          <div style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            height: '100%', color: '#8b949e', fontSize: 11,
+          }}>
+            No messages yet
+          </div>
+        ) : (
+          <Virtuoso
+            ref={virtuosoRef}
+            data={history}
+            style={{ height: '100%' }}
+            itemContent={(index, msg) => (
+              <HistoryRow
+                key={msg.id}
+                msg={msg}
+                isSelected={msg.id === historySelectedId}
+                isEven={index % 2 === 0}
+                onClick={() => selectHistoryMessage(msg.id)}
+              />
+            )}
+          />
+        )}
+      </div>
+
+      {/* ── Payload Viewer (60%) ── */}
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+        {/* Format toolbar */}
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 6,
+          padding: '4px 10px', borderBottom: '1px solid #30363d',
+          flexShrink: 0,
+        }}>
+          <span style={{ fontSize: 11, color: '#8b949e' }}>View as:</span>
+          {(['auto', 'raw', 'json', 'xml', 'hex'] as const).map((fmt) => (
+            <button
+              key={fmt}
+              onClick={() => setViewFormat(fmt)}
+              style={{
+                padding: '1px 7px', borderRadius: 4,
+                fontSize: 10, fontWeight: 500, cursor: 'pointer',
+                border: 'none',
+                background: viewFormat === fmt ? '#1f6feb' : '#21262d',
+                color: viewFormat === fmt ? '#fff' : '#8b949e',
+                transition: 'all 0.15s',
+              }}
+            >
+              {fmt.toUpperCase()}
+            </button>
+          ))}
+          <div style={{ flex: 1 }} />
+          {selectedMsg && (
+            <button
+              onClick={() => handleCopy(formattedPayload)}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 4,
+                background: 'none', border: 'none', cursor: 'pointer',
+                color: copied ? '#3fb950' : '#8b949e', fontSize: 11,
+                padding: '2px 6px', borderRadius: 4,
+              }}
+            >
+              {copied ? <Check size={11} /> : <Copy size={11} />}
+              {copied ? 'Copied!' : 'Copy'}
+            </button>
+          )}
+        </div>
+
+        {/* Monaco Editor */}
+        <div style={{ flex: 1, minHeight: 0 }}>
+          {selectedMsg ? (
+            <Editor
+              height="100%"
+              language={editorLang}
+              value={formattedPayload || '(empty payload)'}
+              theme="vs-dark"
+              options={{
+                readOnly: true,
+                minimap: { enabled: false },
+                fontSize: 13,
+                fontFamily: "'Cascadia Code', 'Consolas', monospace",
+                lineNumbers: editorLang !== 'plaintext' ? 'on' : 'off',
+                scrollBeyondLastLine: false,
+                wordWrap: 'on',
+                padding: { top: 8, bottom: 8 },
+                renderLineHighlight: 'none',
+                automaticLayout: true,
+              }}
+            />
+          ) : (
+            <div style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              height: '100%', color: '#8b949e', fontSize: 11,
+            }}>
+              Select a message from the history above
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
 };
 
-const MetaRow: React.FC<{
-  icon: React.ReactNode;
-  label: string;
-  value: string;
-  mono?: boolean;
-  copyable?: boolean;
-  onCopy?: () => void;
-}> = ({ icon, label, value, mono, copyable, onCopy }) => (
-  <div className="flex items-center gap-2 text-xs group">
-    {icon}
-    <span className="text-text-muted w-16 shrink-0">{label}</span>
-    <span className={`text-text-primary truncate text-selectable ${mono ? 'font-mono' : ''}`}>
-      {value}
-    </span>
-    {copyable && onCopy && (
-      <button
-        onClick={onCopy}
-        className="opacity-0 group-hover:opacity-100 transition-opacity p-0.5 rounded
-                   hover:bg-bg-hover"
-      >
-        <Copy size={10} className="text-text-muted" />
-      </button>
-    )}
-  </div>
-);
+const HistoryRow: React.FC<{
+  msg: MqttMessage;
+  isSelected: boolean;
+  isEven: boolean;
+  onClick: () => void;
+}> = ({ msg, isSelected, isEven, onClick }) => {
+  const preview = msg.payload.length > 80
+    ? msg.payload.slice(0, 80) + '…'
+    : msg.payload;
+
+  return (
+    <div
+      onClick={onClick}
+      style={{
+        display: 'flex', alignItems: 'center', gap: 6,
+        padding: '4px 10px', cursor: 'pointer',
+        fontSize: 11, userSelect: 'none',
+        background: isSelected
+          ? '#1c2d4a'
+          : isEven ? '#0d1117' : '#0f1419',
+        borderLeft: isSelected ? '2px solid #58a6ff' : '2px solid transparent',
+        transition: 'background 0.1s',
+      }}
+      onMouseEnter={(e) => { if (!isSelected) e.currentTarget.style.background = '#161b22'; }}
+      onMouseLeave={(e) => { if (!isSelected) e.currentTarget.style.background = isEven ? '#0d1117' : '#0f1419'; }}
+    >
+      {/* Direction icon */}
+      {msg.direction === 'inbound'
+        ? <ArrowDown size={10} style={{ color: '#3fb950', flexShrink: 0 }} />
+        : <ArrowUp size={10} style={{ color: '#58a6ff', flexShrink: 0 }} />}
+
+      {/* Timestamp */}
+      <span style={{ color: '#8b949e', fontFamily: 'monospace', flexShrink: 0, minWidth: 80 }}>
+        {formatTime(msg.timestamp)}
+      </span>
+
+      {/* Payload preview */}
+      <span style={{
+        flex: 1, overflow: 'hidden', textOverflow: 'ellipsis',
+        whiteSpace: 'nowrap', color: isSelected ? '#e6edf3' : '#c9d1d9',
+        fontFamily: 'monospace',
+      }}>
+        {preview.length > 0 ? preview : <span style={{ color: '#6e7681', fontStyle: 'italic' }}>(empty)</span>}
+      </span>
+
+      {/* QoS badge */}
+      <span style={{
+        fontSize: 9, fontWeight: 700, padding: '0px 4px', borderRadius: 3,
+        background: msg.qos === 0 ? 'rgba(31,111,235,0.2)' : msg.qos === 1 ? 'rgba(227,179,65,0.2)' : 'rgba(255,123,114,0.2)',
+        color: msg.qos === 0 ? '#58a6ff' : msg.qos === 1 ? '#e3b341' : '#ff7b72',
+        flexShrink: 0,
+      }}>
+        Q{msg.qos}
+      </span>
+
+      {/* Retain badge */}
+      {msg.retain && (
+        <span style={{
+          fontSize: 9, fontWeight: 700, padding: '0px 4px', borderRadius: 3,
+          background: 'rgba(163,113,247,0.2)', color: '#a371f7', flexShrink: 0,
+        }}>
+          R
+        </span>
+      )}
+
+      {/* Size */}
+      <span style={{ fontSize: 9, color: '#6e7681', flexShrink: 0 }}>
+        {msg.payloadBytes}B
+      </span>
+    </div>
+  );
+};
