@@ -28,6 +28,7 @@
     "lucide-react": "^0.400.0",
     "mqtt": "^5.0.0",
     "papaparse": "^5.0.0",
+    "protobufjs": "^7.5.4",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-hot-toast": "^2.0.0",

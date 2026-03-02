@@ -1,11 +1,15 @@
-import { app, BrowserWindow, ipcMain, session } from 'electron';
+import { app, BrowserWindow, ipcMain, session, dialog } from 'electron';
 import * as path from 'path';
 import * as mqtt from 'mqtt';
+import * as protobuf from 'protobufjs';
 
 let mainWindow: BrowserWindow | null = null;
 
 // Aktif MQTT bağlantıları
 const clients: Map<string, mqtt.MqttClient> = new Map();
+
+// Yüklü Protobuf şemaları
+const protoRoots: Map<string, protobuf.Root> = new Map();
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -88,6 +92,7 @@ ipcMain.handle('mqtt:connect', async (_event, profileId: string, options: any) =
         profileId,
         topic,
         payload: payload.toString(),
+        payloadBase64: payload.toString('base64'),
         qos: packet.qos,
         retain: packet.retain,
         timestamp: Date.now(),
@@ -177,6 +182,74 @@ ipcMain.handle('window:maximize', () => {
   else mainWindow?.maximize();
 });
 ipcMain.handle('window:close', () => mainWindow?.close());
+
+// Dosya seçici
+ipcMain.handle('dialog:openFile', async (_event, options: any) => {
+  if (!mainWindow) return null;
+  const result = await dialog.showOpenDialog(mainWindow, {
+    properties: ['openFile'],
+    filters: options?.filters || [],
+  });
+  return result.canceled ? null : result.filePaths[0];
+});
+
+// ══════ PROTOBUF IPC ══════
+
+// Protobuf: Şema Yükle
+ipcMain.handle('protobuf:loadSchema', async (_event, filePath: string) => {
+  try {
+    const root = await protobuf.load(filePath);
+    const schemaId = `schema_${crypto.randomUUID()}`;
+    protoRoots.set(schemaId, root);
+
+    const messageTypes: string[] = [];
+    const collectTypes = (ns: protobuf.NamespaceBase) => {
+      ns.nestedArray.forEach((obj) => {
+        if (obj instanceof protobuf.Type) {
+          messageTypes.push(obj.fullName.replace(/^\./, ''));
+        }
+        if (obj instanceof protobuf.Namespace) {
+          collectTypes(obj);
+        }
+      });
+    };
+    collectTypes(root);
+
+    console.log(`[Protobuf] Loaded schema from ${filePath}, found types: ${messageTypes.join(', ')}`);
+    return { success: true, schemaId, messageTypes };
+  } catch (err: any) {
+    console.error(`[Protobuf] Failed to load schema:`, err.message);
+    return { success: false, error: err.message };
+  }
+});
+
+// Protobuf: Şema Kaldır
+ipcMain.handle('protobuf:removeSchema', async (_event, schemaId: string) => {
+  protoRoots.delete(schemaId);
+  return { success: true };
+});
+
+// Protobuf: Decode
+ipcMain.handle('protobuf:decode', async (_event, schemaId: string, messageType: string, base64Payload: string) => {
+  try {
+    const root = protoRoots.get(schemaId);
+    if (!root) return { success: false, error: `Schema not found: ${schemaId}` };
+
+    const Type = root.lookupType(messageType);
+    const buffer = Buffer.from(base64Payload, 'base64');
+    const decoded = Type.decode(buffer);
+    const obj = Type.toObject(decoded, {
+      longs: String,
+      enums: String,
+      bytes: String,
+      defaults: true,
+    });
+    return { success: true, decoded: obj };
+  } catch (err: any) {
+    console.error(`[Protobuf] Decode error:`, err.message);
+    return { success: false, error: err.message };
+  }
+});
 
 // ══════ APP LIFECYCLE ══════
 app.whenReady().then(() => {

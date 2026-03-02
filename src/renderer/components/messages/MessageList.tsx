@@ -91,9 +91,16 @@ export const MessageList: React.FC = () => {
                 RET
               </span>
             )}
-            <span className="text-[9px] px-1 rounded bg-bg-tertiary text-text-muted shrink-0">
-              {msg.payloadFormat.toUpperCase()}
-            </span>
+            {msg.payloadFormat === 'protobuf' ? (
+              <span className="text-[9px] px-1 rounded font-bold shrink-0"
+                style={{ backgroundColor: 'rgba(163,113,247,0.2)', color: '#a371f7' }}>
+                PROTO
+              </span>
+            ) : (
+              <span className="text-[9px] px-1 rounded bg-bg-tertiary text-text-muted shrink-0">
+                {msg.payloadFormat.toUpperCase()}
+              </span>
+            )}
           </div>
 
           {/* Payload önizleme */}

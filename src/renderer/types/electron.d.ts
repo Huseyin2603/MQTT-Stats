@@ -15,6 +15,11 @@ export interface ElectronAPI {
   // File dialog
   openFileDialog: (options: any) => Promise<string | null>;
 
+  // Protobuf
+  protobufLoadSchema: (filePath: string) => Promise<{ success: boolean; schemaId?: string; messageTypes?: string[]; error?: string }>;
+  protobufRemoveSchema: (schemaId: string) => Promise<{ success: boolean }>;
+  protobufDecode: (schemaId: string, messageType: string, base64Payload: string) => Promise<{ success: boolean; decoded?: any; error?: string }>;
+
   // Window controls (match preload names)
   windowMinimize: () => void;
   windowMaximize: () => void;
