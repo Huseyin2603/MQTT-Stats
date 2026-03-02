@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   Plus, Trash2, Eye, EyeOff, Hash, Star, StarOff,
 } from 'lucide-react';
 import { v4 as uuid } from 'uuid';
 import { useConnectionStore } from '@/stores/connectionStore';
+import { useMessageStore } from '@/stores/messageStore';
 import { QoS } from '@/services/mqtt/MqttTypes';
 
 // ===== Subscription Tipi =====
@@ -13,7 +14,6 @@ interface Subscription {
   qos: QoS;
   isActive: boolean;
   isFavorite: boolean;
-  messageCount: number;
   color: string;
 }
 
@@ -25,12 +25,28 @@ const TOPIC_COLORS = [
 
 export const SubscribePanel: React.FC = () => {
   const { activeProfileId, states } = useConnectionStore();
+  const { messages } = useMessageStore();
   const isConnected = states[activeProfileId || ''] === 'connected';
 
   // Local state
   const [subscriptions, setSubscriptions] = useState<Subscription[]>([]);
   const [newTopic, setNewTopic] = useState('#');
   const [newQos, setNewQos] = useState<QoS>(0);
+
+  // ── Mesaj sayacı ──
+  const getMessageCount = useCallback((topic: string): number => {
+    if (topic === '#') return messages.length;
+    if (topic.includes('#') || topic.includes('+')) {
+      const regex = new RegExp(
+        '^' + topic
+          .replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+          .replace(/\\\+/g, '[^/]+')
+          .replace(/#$/, '.*') + '$'
+      );
+      return messages.filter(m => regex.test(m.topic)).length;
+    }
+    return messages.filter(m => m.topic === topic).length;
+  }, [messages]);
 
   // ── Abone Ol ──
   const handleSubscribe = async () => {
@@ -48,7 +64,6 @@ export const SubscribePanel: React.FC = () => {
         qos: newQos,
         isActive: true,
         isFavorite: false,
-        messageCount: 0,
         color: TOPIC_COLORS[subscriptions.length % TOPIC_COLORS.length],
       };
 
@@ -208,7 +223,7 @@ export const SubscribePanel: React.FC = () => {
                   `}>
                     QoS {sub.qos}
                   </span>
-                  <span>{sub.messageCount} msgs</span>
+                  <span>{getMessageCount(sub.topic)} msgs</span>
                 </div>
               </div>
 

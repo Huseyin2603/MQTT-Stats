@@ -280,7 +280,7 @@ export const PublishPanel: React.FC = () => {
       </div>
 
       {/* ═══ PAYLOAD EDITOR (Monaco) ═══ */}
-      <div className="flex-1 px-3 pb-2 min-h-0">
+      <div className="flex-1 px-3 pb-2 min-h-0" style={{ maxHeight: 200 }}>
         <div className="h-full rounded-md overflow-hidden border border-border">
           <Editor
             height="100%"
