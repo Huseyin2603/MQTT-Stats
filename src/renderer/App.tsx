@@ -2,7 +2,7 @@ import React, { useEffect } from 'react';
 import { Toaster } from 'react-hot-toast';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { useConnectionStore } from '@/stores/connectionStore';
-import { useMessageStore } from '@/stores/messageStore';
+import { useMessageStore, detectPayloadFormat } from '@/stores/messageStore';
 import { useProtobufStore } from '@/stores/protobufStore';
 
 export const App: React.FC = () => {
@@ -23,7 +23,7 @@ export const App: React.FC = () => {
           topic: data.topic,
           payload: data.payload,
           payloadBytes: new TextEncoder().encode(data.payload).length,
-          payloadFormat: 'raw' as const,
+          payloadFormat: detectPayloadFormat(data.payload),
           qos: data.qos,
           retain: data.retain,
           duplicate: false,
