@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { persist } from 'zustand/middleware';
 import { v4 as uuidv4 } from 'uuid';
 
 export interface ProtoSchema {
@@ -44,7 +45,9 @@ function mqttTopicMatches(pattern: string, topic: string): boolean {
   return patternParts.length === topicParts.length;
 }
 
-export const useProtobufStore = create<ProtobufStore>((set, get) => ({
+export const useProtobufStore = create<ProtobufStore>()(
+  persist(
+    (set, get) => ({
   schemas: [],
   mappings: [],
 
@@ -132,4 +135,29 @@ export const useProtobufStore = create<ProtobufStore>((set, get) => ({
       return null;
     }
   },
-}));
+}),
+{
+  name: 'mqtt-protobuf-schemas',
+  partialize: (state) => ({
+    schemas: state.schemas,
+    mappings: state.mappings,
+  }),
+  onRehydrateStorage: () => async (state) => {
+    if (!state?.schemas) return;
+    const api = (window as any).electronAPI;
+    if (!api) return;
+
+    for (const schema of state.schemas) {
+      try {
+        const result = await api.protobufLoadSchema(schema.filePath);
+        if (!result.success) {
+          console.warn(`[Protobuf] Failed to reload schema ${schema.fileName}: ${result.error}`);
+        }
+      } catch (err) {
+        console.warn(`[Protobuf] Schema file missing: ${schema.filePath}`);
+      }
+    }
+  },
+}
+  )
+);

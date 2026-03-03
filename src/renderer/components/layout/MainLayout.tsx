@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import {
-  Plug, Send, BarChart3, ScrollText, FileCode2,
+  Plug, Send, BarChart3, ScrollText, FileCode2, Download,
 } from 'lucide-react';
 import { TitleBar } from './TitleBar';
 import { Sidebar } from './Sidebar';
@@ -14,9 +14,10 @@ import { MessageDetail } from '@/components/messages/MessageDetail';
 import { StatsPanel } from '@/components/analytics/StatsPanel';
 import { LogPanel } from '@/components/connection/LogPanel';
 import { ProtobufPanel } from '@/components/protobuf/ProtobufPanel';
+import { ExportPanel } from '@/components/export/ExportPanel';
 import { useConnectionStore } from '@/stores/connectionStore';
 
-type Tab = 'connection' | 'publish' | 'stats' | 'log' | 'protobuf';
+type Tab = 'connection' | 'publish' | 'export' | 'stats' | 'log' | 'protobuf';
 
 export const MainLayout: React.FC = () => {
   const { activeProfileId } = useConnectionStore();
@@ -63,6 +64,7 @@ export const MainLayout: React.FC = () => {
             }}>
               <TabButton active={tab === 'connection'} onClick={() => setTab('connection')} icon={<Plug size={14} />} label="Connection" />
               <TabButton active={tab === 'publish'} onClick={() => setTab('publish')} icon={<Send size={14} />} label="Publish" />
+              <TabButton active={tab === 'export'} onClick={() => setTab('export')} icon={<Download size={14} />} label="Export" />
               <TabButton active={tab === 'stats'} onClick={() => setTab('stats')} icon={<BarChart3 size={14} />} label="Stats" />
               <TabButton active={tab === 'log'} onClick={() => setTab('log')} icon={<ScrollText size={14} />} label="Log" />
               <TabButton active={tab === 'protobuf'} onClick={() => setTab('protobuf')} icon={<FileCode2 size={14} />} label="Protobuf" />
@@ -108,6 +110,7 @@ export const MainLayout: React.FC = () => {
               }}>
                 {tab === 'connection' && <ConnectionForm />}
                 {tab === 'publish' && <PublishPanel />}
+                {tab === 'export' && <ExportPanel />}
                 {tab === 'stats' && <StatsPanel />}
                 {tab === 'log' && <LogPanel />}
                 {tab === 'protobuf' && <ProtobufPanel />}
