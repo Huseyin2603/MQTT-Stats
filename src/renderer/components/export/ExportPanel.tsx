@@ -7,43 +7,103 @@ import { MqttMessage } from '@/services/mqtt/MqttTypes';
 
 type ExportFormat = 'excel' | 'csv';
 
-async function exportToExcel(messages: MqttMessage[], fileName: string) {
+function flattenObject(obj: Record<string, unknown>, prefix = ''): Record<string, unknown> {
+  return Object.entries(obj).reduce((acc, [key, value]) => {
+    const flatKey = prefix ? `${prefix}.${key}` : key;
+    if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
+      Object.assign(acc, flattenObject(value as Record<string, unknown>, flatKey));
+    } else {
+      acc[flatKey] = value;
+    }
+    return acc;
+  }, {} as Record<string, unknown>);
+}
+
+function getPayloadFlattened(msg: MqttMessage): Record<string, unknown> | null {
+  let src = msg.decodedPayload;
+  if (src === undefined || src === null) {
+    try { src = JSON.parse(msg.payload); } catch { return null; }
+  }
+  if (src !== null && typeof src === 'object' && !Array.isArray(src)) {
+    return flattenObject(src as Record<string, unknown>);
+  }
+  return null;
+}
+
+async function exportToExcel(messages: MqttMessage[], fileName: string, flatten: boolean) {
   const workbook = new ExcelJS.Workbook();
   const sheet = workbook.addWorksheet('MQTT Messages');
 
-  sheet.columns = [
+  const baseColumns: Partial<ExcelJS.Column>[] = [
     { header: 'Timestamp', key: 'timestamp', width: 25 },
     { header: 'Topic', key: 'topic', width: 30 },
     { header: 'Direction', key: 'direction', width: 10 },
     { header: 'QoS', key: 'qos', width: 5 },
     { header: 'Retain', key: 'retain', width: 8 },
-    { header: 'Payload (Raw)', key: 'payloadRaw', width: 50 },
-    { header: 'Payload (Decoded)', key: 'payloadDecoded', width: 50 },
     { header: 'Format', key: 'format', width: 10 },
     { header: 'Size (bytes)', key: 'size', width: 12 },
   ];
 
-  const headerRow = sheet.getRow(1);
-  headerRow.font = { bold: true, color: { argb: 'FFFFFFFF' } };
-  headerRow.fill = {
-    type: 'pattern',
-    pattern: 'solid',
-    fgColor: { argb: 'FF1F2937' },
-  };
-
-  messages.forEach((msg) => {
-    sheet.addRow({
-      timestamp: new Date(msg.timestamp).toISOString(),
-      topic: msg.topic,
-      direction: msg.direction,
-      qos: msg.qos,
-      retain: msg.retain,
-      payloadRaw: msg.payload,
-      payloadDecoded: msg.decodedPayload ? JSON.stringify(msg.decodedPayload) : msg.payload,
-      format: msg.payloadFormat,
-      size: msg.payloadBytes,
+  if (flatten) {
+    // Collect all flattened keys across all messages
+    const allKeys = new Set<string>();
+    const flattenedRows = messages.map((msg) => {
+      const flat = getPayloadFlattened(msg);
+      if (flat) Object.keys(flat).forEach((k) => allKeys.add(k));
+      return flat;
     });
-  });
+
+    const payloadKeys = Array.from(allKeys).sort();
+    sheet.columns = [
+      ...baseColumns,
+      ...payloadKeys.map((k) => ({ header: `payload.${k}`, key: `__payload_${k}`, width: 20 })),
+    ];
+
+    const headerRow = sheet.getRow(1);
+    headerRow.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+    headerRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1F2937' } };
+
+    messages.forEach((msg, i) => {
+      const row: Record<string, unknown> = {
+        timestamp: new Date(msg.timestamp).toISOString(),
+        topic: msg.topic,
+        direction: msg.direction,
+        qos: msg.qos,
+        retain: msg.retain,
+        format: msg.payloadFormat,
+        size: msg.payloadBytes,
+      };
+      const flat = flattenedRows[i];
+      if (flat) {
+        payloadKeys.forEach((k) => { row[`__payload_${k}`] = flat[k] ?? ''; });
+      }
+      sheet.addRow(row);
+    });
+  } else {
+    sheet.columns = [
+      ...baseColumns,
+      { header: 'Payload (Raw)', key: 'payloadRaw', width: 50 },
+      { header: 'Payload (Decoded)', key: 'payloadDecoded', width: 50 },
+    ];
+
+    const headerRow = sheet.getRow(1);
+    headerRow.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+    headerRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1F2937' } };
+
+    messages.forEach((msg) => {
+      sheet.addRow({
+        timestamp: new Date(msg.timestamp).toISOString(),
+        topic: msg.topic,
+        direction: msg.direction,
+        qos: msg.qos,
+        retain: msg.retain,
+        payloadRaw: msg.payload,
+        payloadDecoded: msg.decodedPayload ? JSON.stringify(msg.decodedPayload) : msg.payload,
+        format: msg.payloadFormat,
+        size: msg.payloadBytes,
+      });
+    });
+  }
 
   const buffer = await workbook.xlsx.writeBuffer();
   const blob = new Blob([buffer], {
@@ -56,22 +116,56 @@ function escapeCsvValue(value: string): string {
   return `"${value.replace(/"/g, '""').replace(/\r?\n/g, '\\n')}"`;
 }
 
-function exportToCsv(messages: MqttMessage[], fileName: string) {
-  const headers = [
-    'Timestamp', 'Topic', 'Direction', 'QoS', 'Retain',
-    'Payload (Raw)', 'Payload (Decoded)', 'Format', 'Size (bytes)',
-  ];
-  const rows = messages.map((msg) => [
-    new Date(msg.timestamp).toISOString(),
-    msg.topic,
-    msg.direction,
-    msg.qos,
-    msg.retain,
-    escapeCsvValue(msg.payload),
-    escapeCsvValue(msg.decodedPayload ? JSON.stringify(msg.decodedPayload) : msg.payload),
-    msg.payloadFormat,
-    msg.payloadBytes,
-  ]);
+function exportToCsv(messages: MqttMessage[], fileName: string, flatten: boolean) {
+  let headers: string[];
+  let rows: unknown[][];
+
+  if (flatten) {
+    const allKeys = new Set<string>();
+    const flattenedRows = messages.map((msg) => {
+      const flat = getPayloadFlattened(msg);
+      if (flat) Object.keys(flat).forEach((k) => allKeys.add(k));
+      return flat;
+    });
+    const payloadKeys = Array.from(allKeys).sort();
+    headers = [
+      'Timestamp', 'Topic', 'Direction', 'QoS', 'Retain', 'Format', 'Size (bytes)',
+      ...payloadKeys.map((k) => `payload.${k}`),
+    ];
+    rows = messages.map((msg, i) => {
+      const flat = flattenedRows[i];
+      return [
+        new Date(msg.timestamp).toISOString(),
+        msg.topic,
+        msg.direction,
+        msg.qos,
+        msg.retain,
+        msg.payloadFormat,
+        msg.payloadBytes,
+        ...payloadKeys.map((k) => {
+          const v = flat?.[k] ?? '';
+          const str = typeof v === 'object' ? JSON.stringify(v) : String(v);
+          return escapeCsvValue(str);
+        }),
+      ];
+    });
+  } else {
+    headers = [
+      'Timestamp', 'Topic', 'Direction', 'QoS', 'Retain',
+      'Payload (Raw)', 'Payload (Decoded)', 'Format', 'Size (bytes)',
+    ];
+    rows = messages.map((msg) => [
+      new Date(msg.timestamp).toISOString(),
+      msg.topic,
+      msg.direction,
+      msg.qos,
+      msg.retain,
+      escapeCsvValue(msg.payload),
+      escapeCsvValue(msg.decodedPayload ? JSON.stringify(msg.decodedPayload) : msg.payload),
+      msg.payloadFormat,
+      msg.payloadBytes,
+    ]);
+  }
 
   const csv = [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
@@ -85,6 +179,7 @@ export const ExportPanel: React.FC = () => {
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
   const [includeDecoded, setIncludeDecoded] = useState(true);
+  const [flattenPayload, setFlattenPayload] = useState(false);
   const [exporting, setExporting] = useState(false);
 
   // Unique topics
@@ -162,9 +257,9 @@ export const ExportPanel: React.FC = () => {
         : filteredMessages.map((m) => ({ ...m, decodedPayload: undefined }));
 
       if (format === 'excel') {
-        await exportToExcel(msgsToExport, `mqtt-export-${stamp}.xlsx`);
+        await exportToExcel(msgsToExport, `mqtt-export-${stamp}.xlsx`, flattenPayload);
       } else {
-        exportToCsv(msgsToExport, `mqtt-export-${stamp}.csv`);
+        exportToCsv(msgsToExport, `mqtt-export-${stamp}.csv`, flattenPayload);
       }
     } finally {
       setExporting(false);
@@ -315,6 +410,20 @@ export const ExportPanel: React.FC = () => {
           style={{ accentColor: '#58a6ff' }}
         />
         Include decoded payload
+      </label>
+
+      {/* Flatten Payload */}
+      <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', userSelect: 'none' }}>
+        <input
+          type="checkbox"
+          checked={flattenPayload}
+          onChange={(e) => setFlattenPayload(e.target.checked)}
+          style={{ accentColor: '#58a6ff' }}
+        />
+        <span>
+          Flatten Payload
+          <span style={{ color: '#8b949e', marginLeft: 4 }}>(expand JSON keys into separate columns)</span>
+        </span>
       </label>
 
       {/* Preview */}
